@@ -12,6 +12,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Loader2,
+  Users,
 } from 'lucide-react';
 import { DoctorSidebar } from '@/components/layout/DoctorSidebar';
 import { DoctorHeader } from '@/components/layout/DoctorHeader';
@@ -396,35 +397,44 @@ export default function DoctorPatients() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-12">
-              <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No patients found matching your criteria.</p>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-card rounded-2xl border border-border p-12"
+            >
+              <div className="text-center">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted/50 flex items-center justify-center">
+                  <Users className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-2">
+                  {patients.length === 0 ? 'No Patients Available' : 'No Patients Found'}
+                </h3>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  {patients.length === 0 
+                    ? 'You don\'t have any patients yet. Patients can share their medical records with you from their dashboard.'
+                    : searchQuery || statusFilter !== 'all'
+                    ? 'No patients match your search criteria. Try adjusting your filters.'
+                    : 'No patients found matching your criteria.'
+                  }
+                </p>
+                {(searchQuery || statusFilter !== 'all') && patients.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setStatusFilter('all');
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </motion.div>
           )}
           </>
           )}
         </main>
       </div>
     </div>
-  );
-}
-
-function Users({ className }: { className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
   );
 }

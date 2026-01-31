@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
@@ -7,6 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   MessageCircle,
   Send,
@@ -19,11 +26,13 @@ import {
   RotateCcw,
   Copy,
   AlertOctagon,
+  AlertCircle,
   Info,
   Loader2,
   History,
   Check,
   X,
+  Calendar,
 } from 'lucide-react';
 import { 
   sendChatMessage, 
@@ -54,10 +63,14 @@ export default function Assessment() {
   const [canComplete, setCanComplete] = useState(false);
   const [identifiedSymptoms, setIdentifiedSymptoms] = useState<string[]>([]);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResponse | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(true); // Start with history view
   const [history, setHistory] = useState<AssessmentSession[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const [isInAssessment, setIsInAssessment] = useState(false); // Track if user is in assessment
+  const [selectedHistorySession, setSelectedHistorySession] = useState<AssessmentSession | null>(null);
+  const [showConversationModal, setShowConversationModal] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -69,12 +82,16 @@ export default function Assessment() {
     scrollToBottom();
   }, [messages, assessmentResult]);
 
-  // Check for existing session on mount
+  // Load history on mount
   useEffect(() => {
-    checkExistingSession();
+    loadHistory();
   }, []);
 
-  const checkExistingSession = async () => {
+  const startNewAssessment = async () => {
+    setIsInAssessment(true);
+    setShowHistory(false);
+    setIsLoading(true);
+    
     try {
       const session = await getCurrentSession();
       if (session && session.status === 'active') {
@@ -97,6 +114,8 @@ export default function Assessment() {
       addAssistantMessage(
         "Hi! I'm here to help assess your health. Based on your medical history and uploaded reports, I'll ask some questions to understand your symptoms better. What health concern would you like to discuss today?"
       );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -225,17 +244,60 @@ export default function Assessment() {
     }
   };
 
+  const handleCompleteAndGoBack = () => {
+    backToHistory();
+    toast.success('Assessment completed! View it in your history.');
+  };
+
   const loadHistory = async () => {
     setIsLoadingHistory(true);
     try {
       const sessions = await getAssessmentHistory(10);
       setHistory(sessions);
-      setShowHistory(true);
     } catch (error) {
-      toast.error('Failed to load history.');
+      console.error('Failed to load history:', error);
+      // Don't show error toast on mount
     } finally {
       setIsLoadingHistory(false);
     }
+  };
+
+  const backToHistory = () => {
+    setIsInAssessment(false);
+    setShowHistory(true);
+    loadHistory();
+  };
+
+  const viewConversationHistory = async (session: AssessmentSession) => {
+    setSelectedHistorySession(session);
+    setShowConversationModal(true);
+    setLoadingConversation(true);
+    
+    // If conversation history is not loaded, try to fetch it
+    if (!session.conversation_history || session.conversation_history.length === 0) {
+      try {
+        const { getSessionWithConversation } = await import('@/lib/api/assessment');
+        const fullSession = await getSessionWithConversation(session.session_id);
+        setSelectedHistorySession(fullSession);
+      } catch (error) {
+        console.error('Failed to load conversation:', error);
+        toast.error('Could not load full conversation details');
+        // Continue with what we have
+      } finally {
+        setLoadingConversation(false);
+      }
+    } else {
+      setLoadingConversation(false);
+    }
+  };
+
+  const getTruncatedSummary = (session: AssessmentSession, maxWords: number = 10): string => {
+    const summary = session.results_summary || session.last_message || 'Assessment session';
+    const words = summary.split(' ');
+    if (words.length <= maxWords) {
+      return summary;
+    }
+    return words.slice(0, maxWords).join(' ') + '...';
   };
 
   const copyDoctorSummary = () => {
@@ -273,63 +335,188 @@ export default function Assessment() {
                     AI Health Assessment
                   </h1>
                   <p className="text-muted-foreground">
-                    Describe your symptoms for personalized health insights based on your medical history
+                    {showHistory 
+                      ? 'View your assessment history or start a new health assessment'
+                      : 'Describe your symptoms for personalized health insights based on your medical history'
+                    }
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={loadHistory}
-                    disabled={isLoadingHistory}
-                  >
-                    {isLoadingHistory ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <History className="w-4 h-4 mr-2" />
+                  {!showHistory && (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={backToHistory}
+                      >
+                        <History className="w-4 h-4 mr-2" />
+                        Back to History
+                      </Button>
+                      <Button variant="outline" onClick={handleReset} disabled={isLoading}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Start Over
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Bar - Only show in assessment mode */}
+              {!showHistory && (
+                <>
+                  <div className="flex items-center gap-4">
+                    <Progress value={progress} className="flex-1" />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      {progress}% • {questionCount} questions
+                    </span>
+                    {canComplete && !assessmentResult && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={handleForceComplete}
+                        disabled={isLoading}
+                      >
+                        Complete Now
+                      </Button>
                     )}
-                    History
-                  </Button>
-                  <Button variant="outline" onClick={handleReset} disabled={isLoading}>
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Start Over
-                  </Button>
-                </div>
-              </div>
+                  </div>
 
-              {/* Progress Bar */}
-              <div className="flex items-center gap-4">
-                <Progress value={progress} className="flex-1" />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  {progress}% • {questionCount} questions
-                </span>
-                {canComplete && !assessmentResult && (
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleForceComplete}
-                    disabled={isLoading}
-                  >
-                    Complete Now
-                  </Button>
-                )}
-              </div>
-
-              {/* Identified Symptoms */}
-              {identifiedSymptoms.length > 0 && !assessmentResult && (
-                <div className="mt-3 flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground">Identified:</span>
-                  {identifiedSymptoms.map((symptom, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {symptom}
-                    </Badge>
-                  ))}
-                </div>
+                  {/* Identified Symptoms */}
+                  {identifiedSymptoms.length > 0 && !assessmentResult && (
+                    <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-muted-foreground">Identified:</span>
+                      {identifiedSymptoms.map((symptom, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {symptom}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </motion.div>
 
-            {/* Chat Container */}
-            <div className="flex-1 bg-card rounded-2xl border border-border overflow-hidden flex flex-col">
+            {/* History View */}
+            {showHistory && (
+              <div className="flex-1 bg-card rounded-2xl border border-border overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-border flex items-center justify-between">
+                  <h3 className="font-heading text-lg font-semibold text-foreground">
+                    Recent Assessments
+                  </h3>
+                  <Button onClick={startNewAssessment} disabled={isLoadingHistory}>
+                    <Brain className="w-4 h-4 mr-2" />
+                    Start New Assessment
+                  </Button>
+                </div>
+                
+                <ScrollArea className="flex-1 p-6">
+                  {isLoadingHistory ? (
+                    <div className="flex items-center justify-center py-20">
+                      <div className="text-center">
+                        <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                        <p className="text-muted-foreground">Loading assessment history...</p>
+                      </div>
+                    </div>
+                  ) : history.length === 0 ? (
+                    <div className="text-center py-20">
+                      <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted/50 flex items-center justify-center">
+                        <Brain className="w-10 h-10 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-foreground mb-2">
+                        No Assessments Yet
+                      </h3>
+                      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                        Start your first AI health assessment to get personalized insights based on your symptoms and medical history.
+                      </p>
+                      <Button onClick={startNewAssessment}>
+                        <Brain className="w-4 h-4 mr-2" />
+                        Start Your First Assessment
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {history.map((session) => (
+                        <div
+                          key={session.session_id}
+                          className="p-5 bg-muted/30 rounded-xl border border-border hover:border-primary/30 hover:bg-muted/50 transition-all cursor-pointer group"
+                          onClick={() => viewConversationHistory(session)}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1 min-w-0 pr-4">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge 
+                                  variant={session.status === 'completed' ? 'default' : 'secondary'}
+                                  className={session.status === 'completed' ? 'bg-success/10 text-success border-success/20' : ''}
+                                >
+                                  {session.status === 'completed' ? (
+                                    <>
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Completed
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      {session.status}
+                                    </>
+                                  )}
+                                </Badge>
+                                {session.has_assessment && (
+                                  <Badge variant="outline" className="text-xs">
+                                    <FileText className="w-3 h-3 mr-1" />
+                                    Has Results
+                                  </Badge>
+                                )}
+                              </div>
+                              <h4 className="text-sm text-foreground font-semibold mb-1 line-clamp-2 group-hover:text-primary transition-colors">
+                                {getTruncatedSummary(session, 15)}
+                              </h4>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <MessageCircle className="w-3 h-3" />
+                                  {session.question_count} questions
+                                </span>
+                                {session.identified_symptoms.length > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3" />
+                                    {session.identified_symptoms.length} symptoms
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">
+                              {new Date(session.started_at).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </span>
+                          </div>
+                          
+                          {session.identified_symptoms.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {session.identified_symptoms.slice(0, 5).map((symptom, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {symptom}
+                                </Badge>
+                              ))}
+                              {session.identified_symptoms.length > 5 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{session.identified_symptoms.length - 5} more
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Chat Container - Only show in assessment mode */}
+            {!showHistory && (
+              <div className="flex-1 bg-card rounded-2xl border border-border overflow-hidden flex flex-col">
               <ScrollArea className="flex-1 p-6">
                 <div className="space-y-4">
                   <AnimatePresence>
@@ -561,10 +748,6 @@ export default function Assessment() {
 
                       {/* Action Buttons */}
                       <div className="flex items-center gap-4 flex-wrap">
-                        <Button variant="hero">
-                          <FileText className="w-4 h-4 mr-2" />
-                          Add to Timeline
-                        </Button>
                         <Button variant="outline" onClick={copyDoctorSummary}>
                           {copiedSummary ? (
                             <>
@@ -581,6 +764,10 @@ export default function Assessment() {
                         <Button variant="outline" onClick={handleReset}>
                           <RotateCcw className="w-4 h-4 mr-2" />
                           New Assessment
+                        </Button>
+                        <Button variant="default" onClick={backToHistory}>
+                          <History className="w-4 h-4 mr-2" />
+                          Back to History
                         </Button>
                       </div>
                     </motion.div>
@@ -620,88 +807,161 @@ export default function Assessment() {
                   </p>
                 </div>
               )}
-            </div>
+              </div>
+            )}
           </div>
         </main>
       </div>
 
-      {/* History Sidebar */}
-      <AnimatePresence>
-        {showHistory && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 z-40"
-              onClick={() => setShowHistory(false)}
-            />
-            
-            {/* Sidebar */}
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 20 }}
-              className="fixed right-0 top-0 bottom-0 w-96 bg-card border-l border-border z-50 overflow-hidden flex flex-col"
-            >
-              <div className="p-4 border-b border-border flex items-center justify-between">
-                <h3 className="font-heading font-semibold text-foreground">Assessment History</h3>
-                <Button variant="ghost" size="icon" onClick={() => setShowHistory(false)}>
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <ScrollArea className="flex-1 p-4">
-                <div className="space-y-3">
-                  {history.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No previous assessments found
-                    </p>
-                  ) : (
-                    history.map((session) => (
-                      <div
-                        key={session.session_id}
-                        className="p-4 bg-muted/50 rounded-xl border border-border"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <Badge 
-                            variant={session.status === 'completed' ? 'default' : 'secondary'}
-                            className={session.status === 'completed' ? 'bg-success/10 text-success' : ''}
-                          >
-                            {session.status}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(session.started_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-foreground mb-2 line-clamp-2">
-                          "{session.last_message}"
-                        </p>
-                        
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{session.question_count} questions</span>
-                          {session.identified_symptoms.length > 0 && (
-                            <span>{session.identified_symptoms.length} symptoms</span>
-                          )}
-                        </div>
-                        
-                        {session.has_assessment && (
-                          <Badge variant="outline" className="mt-2 text-xs">
-                            Has Assessment
-                          </Badge>
-                        )}
-                      </div>
-                    ))
+      {/* Conversation History Modal */}
+      <Dialog open={showConversationModal} onOpenChange={setShowConversationModal}>
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <DialogTitle className="text-xl font-semibold pr-8 line-clamp-2">
+              {selectedHistorySession?.results_summary || 'Assessment Conversation'}
+            </DialogTitle>
+            <DialogDescription className="mt-2">
+              {selectedHistorySession && (
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  <span className="flex items-center gap-1.5 text-foreground">
+                    <Calendar className="w-4 h-4" />
+                    {new Date(selectedHistorySession.started_at).toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-foreground">
+                    <MessageCircle className="w-4 h-4" />
+                    {selectedHistorySession.question_count} questions
+                  </span>
+                  {selectedHistorySession.identified_symptoms.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-foreground">
+                      <AlertCircle className="w-4 h-4" />
+                      {selectedHistorySession.identified_symptoms.length} symptoms
+                    </span>
                   )}
                 </div>
-              </ScrollArea>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {loadingConversation ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="text-center">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading conversation details...</p>
+                </div>
+              </div>
+            ) : (
+            <div className="space-y-6 pb-4">
+              {/* Results Summary - Show First */}
+              {selectedHistorySession && selectedHistorySession.results_summary && (
+                <div className="p-5 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl border border-primary/20">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 text-primary" />
+                    </div>
+                    <h4 className="text-base font-semibold text-foreground">Assessment Summary</h4>
+                  </div>
+                  <p className="text-sm text-foreground leading-relaxed pl-11">
+                    {selectedHistorySession.results_summary}
+                  </p>
+                </div>
+              )}
+
+              {/* Identified Symptoms */}
+              {selectedHistorySession && selectedHistorySession.identified_symptoms.length > 0 && (
+                <div className="p-5 bg-muted/30 rounded-xl border border-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-5 h-5 text-warning" />
+                    <h4 className="text-base font-semibold text-foreground">Identified Symptoms</h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedHistorySession.identified_symptoms.map((symptom, i) => (
+                      <Badge key={i} variant="secondary" className="text-sm py-1 px-3">
+                        {symptom}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Identified Conditions */}
+              {selectedHistorySession && selectedHistorySession.identified_conditions && selectedHistorySession.identified_conditions.length > 0 && (
+                <div className="p-5 bg-warning/5 rounded-xl border border-warning/20">
+                  <div className="flex items-center gap-2 mb-4">
+                    <AlertTriangle className="w-5 h-5 text-warning" />
+                    <h4 className="text-base font-semibold text-foreground">Identified Conditions</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedHistorySession.identified_conditions.map((condition: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-background/60 rounded-lg border border-border">
+                        <span className="text-sm font-medium text-foreground">{condition.name}</span>
+                        <Badge variant="outline" className="text-xs font-semibold">
+                          {condition.confidence}% match
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Conversation History */}
+              {selectedHistorySession && selectedHistorySession.conversation_history && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur-sm py-2 z-10">
+                    <MessageCircle className="w-5 h-5 text-primary" />
+                    <h4 className="text-base font-semibold text-foreground">Full Conversation</h4>
+                  </div>
+                  <div className="space-y-4">
+                    {selectedHistorySession.conversation_history.map((msg: any, index: number) => (
+                      <div
+                        key={index}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[85%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                          {msg.role === 'assistant' && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                                <Brain className="w-4 h-4 text-primary" />
+                              </div>
+                              <span className="text-xs font-medium text-muted-foreground">MedUnify AI</span>
+                            </div>
+                          )}
+                          
+                          <div className={`px-4 py-3 rounded-xl ${
+                            msg.role === 'user'
+                              ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-sm'
+                              : 'bg-muted rounded-tl-sm border border-border'
+                          }`}>
+                            <p className={`text-sm leading-relaxed whitespace-pre-wrap ${
+                              msg.role === 'user' ? 'text-primary-foreground' : 'text-foreground'
+                            }`}>
+                              {msg.content}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 px-6 py-4 border-t bg-background">
+            <Button variant="outline" onClick={() => setShowConversationModal(false)}>
+              <X className="w-4 h-4 mr-2" />
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

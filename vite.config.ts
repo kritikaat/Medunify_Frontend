@@ -15,8 +15,14 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "::",
       port: 8080,
+      // Allow ngrok domains and disable host checking for development
+      allowedHosts: [
+        'glucosidic-explicative-terrell.ngrok-free.dev',
+        '.ngrok-free.dev', // Allow any ngrok-free.dev subdomain
+      ],
+      // Enable HMR for fast refresh without full page reloads
       hmr: {
-        overlay: false,
+        overlay: true, // Show errors as overlay
       },
       // Proxy API requests to bypass CORS during development
       proxy: {

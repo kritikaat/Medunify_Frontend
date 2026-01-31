@@ -17,6 +17,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Share2,
   Search,
   Calendar,
@@ -33,12 +43,13 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import type { DoctorProfile, ActiveShare, ShareableContent } from '@/types/share';
 import { SHARE_CONTENT_OPTIONS, DATE_RANGE_OPTIONS, EXPIRY_OPTIONS } from '@/types/share';
-import { listDoctorShares, shareWithDoctors, revokeDoctorShare, updateDoctorShare } from '@/lib/api/patient-doctor-share';
+import { listDoctorShares, shareWithDoctors, revokeDoctorShare, updateDoctorShare, getDoctorShareDetails } from '@/lib/api/patient-doctor-share';
 import { listDoctors } from '@/lib/api/doctor-discovery';
 
 // Dummy doctors data
@@ -158,6 +169,11 @@ export default function Share() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingShare, setEditingShare] = useState<ActiveShare | null>(null);
 
+  // Revoke confirmation dialog state
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [shareToRevoke, setShareToRevoke] = useState<{ id: string; doctorName: string } | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+
   // Fetch data on mount
   useEffect(() => {
     fetchData();
@@ -185,9 +201,11 @@ export default function Share() {
         hospital_name: s.doctor.hospital_name,
         specialization: s.doctor.specialization,
         shared_content: [
+          'profile', // Always included - doctors need basic profile
           s.config.include_timeline ? 'timeline' : '',
           s.config.include_reports ? 'lab_reports' : '',
-          s.config.include_assessments ? 'assessments' : '',
+          s.config.include_assessments ? 'assessment' : '',
+          s.config.include_prescriptions ? 'prescriptions' : '',
         ].filter(Boolean) as ShareableContent[],
         date_range: 'custom',
         expires_at: s.expires_at,
@@ -253,7 +271,7 @@ export default function Share() {
   const handleOpenShareModal = (doctor: DoctorProfile) => {
     setSelectedDoctor(doctor);
     setShareConfig({
-      content: ['timeline', 'lab_reports'],
+      content: ['profile', 'timeline', 'lab_reports'], // Always include profile by default
       dateRange: '6-months',
       expiresInDays: 30,
     });
@@ -283,64 +301,163 @@ export default function Share() {
 
     setIsSharing(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Check if already shared with this doctor
-      const existingShare = activeShares.find(s => s.doctor_id === selectedDoctor.id);
-      if (existingShare) {
-        // Update existing share
-        setActiveShares(prev =>
-          prev.map(s =>
-            s.id === existingShare.id
-              ? {
-                  ...s,
-                  shared_content: shareConfig.content,
-                  date_range: shareConfig.dateRange as any,
-                  expires_at: new Date(Date.now() + shareConfig.expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
-                }
-              : s
-          )
-        );
-        toast.success('Share updated successfully');
+      // Map UI content options to API config
+      // NOTE: Always include profile - it's required for doctors to view patient data
+      const apiConfig: any = {
+        include_profile: true, // Always true - doctors need basic profile info
+        include_reports: shareConfig.content.includes('lab_reports') || shareConfig.content.includes('radiology'),
+        include_timeline: shareConfig.content.includes('timeline'),
+        include_assessments: shareConfig.content.includes('assessment'),
+        include_prescriptions: shareConfig.content.includes('prescriptions'),
+        permissions: ['view', 'download'] as any[],
+      };
+
+      console.log('📤 [Share] Sending share request:', {
+        doctor: selectedDoctor.name,
+        doctor_id: selectedDoctor.id,
+        config: apiConfig,
+        expires_in_days: shareConfig.expiresInDays,
+      });
+
+      // Call the real API
+      const shares = await shareWithDoctors({
+        doctor_ids: [selectedDoctor.id],
+        config: apiConfig,
+        expires_in_days: shareConfig.expiresInDays,
+      });
+
+      console.log('✅ [Share] API Response:', {
+        shares_created: shares.length,
+        first_share: shares[0] ? {
+          id: shares[0].id,
+          include_profile: shares[0].config.include_profile,
+          is_active: shares[0].is_active,
+        } : null,
+      });
+
+      // Transform and add to state
+      const newShares: ActiveShare[] = shares.map(s => ({
+        id: s.id,
+        patient_id: '', // Current user
+        doctor_id: s.doctor.id,
+        doctor_name: s.doctor.name,
+        doctor_email: '', // Not exposed
+        hospital_name: s.doctor.hospital_name,
+        specialization: s.doctor.specialization,
+        shared_content: [
+          'profile', // Always included
+          s.config.include_timeline ? 'timeline' : '',
+          s.config.include_reports ? 'lab_reports' : '',
+          s.config.include_assessments ? 'assessment' : '',
+          s.config.include_prescriptions ? 'prescriptions' : '',
+        ].filter(Boolean) as any[],
+        date_range: 'custom',
+        expires_at: s.expires_at,
+        created_at: s.created_at,
+        access_count: s.access_count,
+        is_active: s.is_active && !s.is_expired,
+      }));
+
+      // Update state - replace if exists, add if new
+      const existingIndex = activeShares.findIndex(s => s.doctor_id === selectedDoctor.id);
+      if (existingIndex >= 0) {
+        setActiveShares(prev => [
+          ...prev.slice(0, existingIndex),
+          newShares[0],
+          ...prev.slice(existingIndex + 1),
+        ]);
+        toast.success(`Share updated with ${selectedDoctor.name}`, {
+          description: 'Access has been renewed and updated.',
+        });
       } else {
-        // Create new share
-        const newShare: ActiveShare = {
-          id: `s${Date.now()}`,
-          patient_id: 'p1',
-          doctor_id: selectedDoctor.id,
-          doctor_name: selectedDoctor.name,
-          doctor_email: selectedDoctor.email,
-          hospital_name: selectedDoctor.hospital_name,
-          specialization: selectedDoctor.specialization,
-          shared_content: shareConfig.content,
-          date_range: shareConfig.dateRange as any,
-          expires_at: new Date(Date.now() + shareConfig.expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
-          created_at: new Date().toISOString(),
-          access_count: 0,
-          is_active: true,
-        };
-        setActiveShares(prev => [newShare, ...prev]);
-        toast.success(`Shared successfully with ${selectedDoctor.name}`);
+        setActiveShares(prev => [newShares[0], ...prev]);
+        toast.success(`Shared successfully with ${selectedDoctor.name}`, {
+          description: 'They can now access your medical records.',
+        });
       }
 
       setShareModalOpen(false);
     } catch (error) {
-      toast.error('Failed to share. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to share';
+      console.error('❌ Share Error:', { message: errorMessage, fullError: error });
+      
+      toast.error('Failed to share', {
+        description: errorMessage,
+      });
     } finally {
       setIsSharing(false);
     }
   };
 
-  const handleRevokeShare = (shareId: string) => {
-    setActiveShares(prev => prev.filter(s => s.id !== shareId));
-    toast.success('Access revoked successfully');
+  const openRevokeDialog = (shareId: string, doctorName: string) => {
+    setShareToRevoke({ id: shareId, doctorName });
+    setRevokeDialogOpen(true);
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!shareToRevoke) return;
+
+    setIsRevoking(true);
+    try {
+      // Call API to revoke the share
+      await revokeDoctorShare(shareToRevoke.id);
+      
+      // Remove from local state
+      setActiveShares(prev => prev.filter(s => s.id !== shareToRevoke.id));
+      
+      toast.success(`Access revoked for ${shareToRevoke.doctorName}`, {
+        description: 'The doctor can no longer view your medical records.',
+      });
+      
+      setRevokeDialogOpen(false);
+      setShareToRevoke(null);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to revoke access';
+      console.error('❌ Revoke Share Error:', { message: errorMessage, fullError: error });
+      
+      toast.error('Failed to revoke access', {
+        description: errorMessage,
+      });
+    } finally {
+      setIsRevoking(false);
+    }
+  };
+
+  const debugShareDetails = async (shareId: string, doctorName: string) => {
+    try {
+      const shareDetails = await getDoctorShareDetails(shareId);
+      console.log('🔍 [DEBUG] Share Details for', doctorName, ':', {
+        shareId,
+        include_profile: shareDetails.config.include_profile,
+        include_reports: shareDetails.config.include_reports,
+        include_timeline: shareDetails.config.include_timeline,
+        include_assessments: shareDetails.config.include_assessments,
+        is_active: shareDetails.is_active,
+        is_expired: shareDetails.is_expired,
+        expires_at: shareDetails.expires_at,
+        fullConfig: shareDetails.config,
+      });
+      
+      const profileStatus = shareDetails.config.include_profile ? '✅ ENABLED' : '❌ DISABLED';
+      toast.info(`Profile Access: ${profileStatus}`, {
+        description: `Check browser console for full details`,
+        duration: 5000,
+      });
+    } catch (error) {
+      console.error('❌ Failed to get share details:', error);
+      toast.error('Failed to load share details');
+    }
   };
 
   const handleEditShare = (share: ActiveShare) => {
     setEditingShare(share);
+    // Ensure profile is always included in the content
+    const content = share.shared_content as ShareableContent[];
+    if (!content.includes('profile')) {
+      content.unshift('profile');
+    }
     setShareConfig({
-      content: share.shared_content as ShareableContent[],
+      content,
       dateRange: share.date_range,
       expiresInDays: 30,
     });
@@ -352,25 +469,55 @@ export default function Share() {
     
     setIsSharing(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Map UI content options to API config
+      // NOTE: Always include profile - it's required for doctors to view patient data
+      const apiConfig: any = {
+        include_profile: true, // Always true - doctors need basic profile info
+        include_reports: shareConfig.content.includes('lab_reports') || shareConfig.content.includes('radiology'),
+        include_timeline: shareConfig.content.includes('timeline'),
+        include_assessments: shareConfig.content.includes('assessment'),
+        include_prescriptions: shareConfig.content.includes('prescriptions'),
+        permissions: ['view', 'download'] as any[],
+      };
+
+      // Call the real API to update the share
+      const updatedShare = await updateDoctorShare(editingShare.id, {
+        config: apiConfig,
+        expires_in_days: shareConfig.expiresInDays,
+      });
       
+      // Update local state with API response
       setActiveShares(prev =>
         prev.map(s =>
           s.id === editingShare.id
             ? {
                 ...s,
-                shared_content: shareConfig.content,
+                shared_content: [
+                  updatedShare.config.include_timeline ? 'timeline' : '',
+                  updatedShare.config.include_reports ? 'lab_reports' : '',
+                  updatedShare.config.include_assessments ? 'assessment' : '',
+                  updatedShare.config.include_prescriptions ? 'prescriptions' : '',
+                  'profile', // Always include profile in display
+                ].filter(Boolean) as any[],
                 date_range: shareConfig.dateRange as any,
-                expires_at: new Date(Date.now() + shareConfig.expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
+                expires_at: updatedShare.expires_at,
+                is_active: updatedShare.is_active && !updatedShare.is_expired,
               }
             : s
         )
       );
       
-      toast.success('Share updated successfully');
+      toast.success('Share updated successfully', {
+        description: 'Access permissions have been updated.',
+      });
       setEditModalOpen(false);
     } catch (error) {
-      toast.error('Failed to update share');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update share';
+      console.error('❌ Update Share Error:', { message: errorMessage, fullError: error });
+      
+      toast.error('Failed to update share', {
+        description: errorMessage,
+      });
     } finally {
       setIsSharing(false);
     }
@@ -457,7 +604,17 @@ export default function Share() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8"
+                          onClick={() => debugShareDetails(share.id, share.doctor_name)}
+                          title="Debug share configuration"
+                        >
+                          <AlertCircle className="w-4 h-4 text-info" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
                           onClick={() => handleEditShare(share)}
+                          title="Edit share settings"
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
@@ -465,7 +622,8 @@ export default function Share() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8 text-error hover:text-error"
-                          onClick={() => handleRevokeShare(share.id)}
+                          onClick={() => openRevokeDialog(share.id, share.doctor_name)}
+                          title={`Revoke access for ${share.doctor_name}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -594,16 +752,28 @@ export default function Share() {
                       shareConfig.content.includes(option.id)
                         ? 'border-primary bg-primary/5'
                         : 'border-border hover:border-primary/50'
-                    }`}
+                    } ${option.id === 'profile' ? 'opacity-100' : ''}`}
                   >
                     <Checkbox
                       checked={shareConfig.content.includes(option.id)}
                       onCheckedChange={() => toggleShareContent(option.id)}
+                      disabled={option.id === 'profile'}
                     />
-                    <span className="text-sm font-medium text-foreground">{option.label}</span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-foreground">{option.label}</span>
+                      {option.id === 'profile' && (
+                        <span className="block text-xs text-muted-foreground mt-0.5">
+                          Always included
+                        </span>
+                      )}
+                    </div>
                   </label>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                Basic Profile is always shared with doctors for proper patient identification
+              </p>
             </div>
 
             {/* Date Range */}
@@ -690,16 +860,28 @@ export default function Share() {
                       shareConfig.content.includes(option.id)
                         ? 'border-primary bg-primary/5'
                         : 'border-border hover:border-primary/50'
-                    }`}
+                    } ${option.id === 'profile' ? 'opacity-100' : ''}`}
                   >
                     <Checkbox
                       checked={shareConfig.content.includes(option.id)}
                       onCheckedChange={() => toggleShareContent(option.id)}
+                      disabled={option.id === 'profile'}
                     />
-                    <span className="text-sm font-medium text-foreground">{option.label}</span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-foreground">{option.label}</span>
+                      {option.id === 'profile' && (
+                        <span className="block text-xs text-muted-foreground mt-0.5">
+                          Always included
+                        </span>
+                      )}
+                    </div>
                   </label>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                Basic Profile is always shared with doctors for proper patient identification
+              </p>
             </div>
 
             {/* Date Range */}
@@ -837,6 +1019,41 @@ export default function Share() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Revoke Confirmation Dialog */}
+      <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke Doctor Access?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to revoke access for <strong>{shareToRevoke?.doctorName}</strong>?
+              <br /><br />
+              They will no longer be able to view your medical records, timeline, or any shared health data.
+              This action will take effect immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmRevoke}
+              disabled={isRevoking}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRevoking ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Revoking...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Revoke Access
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

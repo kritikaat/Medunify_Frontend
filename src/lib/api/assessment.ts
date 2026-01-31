@@ -78,11 +78,28 @@ export async function getCurrentSession(): Promise<AssessmentSession | null> {
  * with all questions and answers for displaying full chat history
  */
 export async function getAssessmentHistory(
-  params?: AssessmentHistoryParams
+  limit: number = 10,
+  includeConversation: boolean = false
 ): Promise<AssessmentSession[]> {
-  return get<AssessmentSession[]>(ASSESSMENT_ENDPOINTS.HISTORY, {
-    limit: params?.limit ?? 10,
-    include_conversation: params?.include_conversation !== false ? 'true' : 'false',
+  const params: Record<string, string> = {
+    limit: String(limit),
+  };
+  
+  // Only include conversation if explicitly requested
+  if (includeConversation) {
+    params.include_conversation = 'true';
+  }
+  
+  return get<AssessmentSession[]>(ASSESSMENT_ENDPOINTS.HISTORY, params);
+}
+
+/**
+ * Get a specific session with full conversation history
+ * @param sessionId - The session ID to fetch
+ */
+export async function getSessionWithConversation(sessionId: string): Promise<AssessmentSession> {
+  return get<AssessmentSession>(`${ASSESSMENT_ENDPOINTS.HISTORY}/${sessionId}`, {
+    include_conversation: 'true',
   });
 }
 
