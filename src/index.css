@@ -1,0 +1,277 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* MedUnify Design System - Medical Green Theme */
+
+@layer base {
+  :root {
+    /* Primary Green Palette */
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Secondary - Lighter Green */
+    --secondary: 145 80% 96%;
+    --secondary-foreground: 142 64% 24%;
+    
+    /* Accent - Teal Green */
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
+    
+    /* Background & Foreground */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    
+    /* Card */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    
+    /* Muted */
+    --muted: 145 30% 96%;
+    --muted-foreground: 142 10% 40%;
+    
+    /* Border & Input */
+    --border: 145 20% 90%;
+    --input: 145 20% 90%;
+    --ring: 142 71% 45%;
+    
+    /* Status Colors */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --error: 0 84% 60%;
+    --error-foreground: 0 0% 100%;
+    
+    --critical: 0 73% 51%;
+    --critical-foreground: 0 0% 100%;
+    
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* Chart Colors */
+    --chart-1: 142 71% 45%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 198 93% 60%;
+    --chart-5: 280 65% 60%;
+    
+    /* Radius */
+    --radius: 0.75rem;
+    
+    /* Sidebar */
+    --sidebar-background: 145 30% 98%;
+    --sidebar-foreground: 142 10% 30%;
+    --sidebar-primary: 142 71% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 145 40% 94%;
+    --sidebar-accent-foreground: 142 64% 24%;
+    --sidebar-border: 145 20% 90%;
+    --sidebar-ring: 142 71% 45%;
+    
+    /* Custom Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(142, 71%, 45%) 0%, hsl(160, 84%, 39%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(145, 80%, 98%) 0%, hsl(160, 60%, 95%) 50%, hsl(145, 80%, 98%) 100%);
+    --gradient-mesh: radial-gradient(at 0% 0%, hsla(142, 71%, 45%, 0.15) 0%, transparent 50%),
+                     radial-gradient(at 100% 100%, hsla(160, 84%, 39%, 0.1) 0%, transparent 50%);
+    --gradient-card: linear-gradient(180deg, hsl(0, 0%, 100%) 0%, hsl(145, 30%, 99%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsla(142, 71%, 45%, 0.05);
+    --shadow-md: 0 4px 6px -1px hsla(142, 71%, 45%, 0.1), 0 2px 4px -2px hsla(142, 71%, 45%, 0.1);
+    --shadow-lg: 0 10px 15px -3px hsla(142, 71%, 45%, 0.1), 0 4px 6px -4px hsla(142, 71%, 45%, 0.1);
+    --shadow-xl: 0 20px 25px -5px hsla(142, 71%, 45%, 0.1), 0 8px 10px -6px hsla(142, 71%, 45%, 0.1);
+    --shadow-green: 0 10px 30px -5px hsla(142, 71%, 45%, 0.25);
+    --shadow-glow: 0 0 20px hsla(142, 71%, 45%, 0.4);
+  }
+
+  .dark {
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 142 30% 15%;
+    --secondary-foreground: 145 80% 90%;
+    
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
+    
+    --background: 0 0% 5%;
+    --foreground: 0 0% 95%;
+    
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 95%;
+    
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 95%;
+    
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 65%;
+    
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 142 71% 45%;
+    
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --error: 0 62% 50%;
+    --error-foreground: 0 0% 100%;
+    
+    --critical: 0 73% 45%;
+    --critical-foreground: 0 0% 100%;
+    
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 142 71% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 142 71% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  /* Gradient Backgrounds */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+  
+  .bg-gradient-mesh {
+    background: var(--gradient-mesh);
+  }
+  
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+  
+  /* Shadow Utilities */
+  .shadow-green {
+    box-shadow: var(--shadow-green);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  /* Glass Effect */
+  .glass {
+    @apply bg-white/70 backdrop-blur-lg border border-white/20;
+  }
+  
+  /* Status Cards */
+  .status-normal {
+    @apply bg-success/10 border-success/20 text-success;
+  }
+  
+  .status-warning {
+    @apply bg-warning/10 border-warning/20 text-warning;
+  }
+  
+  .status-error {
+    @apply bg-error/10 border-error/20 text-error;
+  }
+  
+  .status-critical {
+    @apply bg-critical/10 border-critical/20 text-critical;
+  }
+  
+  /* Animated Underline for Links */
+  .link-underline {
+    @apply relative;
+  }
+  
+  .link-underline::after {
+    @apply content-[''] absolute w-full scale-x-0 h-0.5 bottom-0 left-0 bg-primary origin-bottom-right transition-transform duration-300;
+  }
+  
+  .link-underline:hover::after {
+    @apply scale-x-100 origin-bottom-left;
+  }
+  
+  /* Hover Scale */
+  .hover-lift {
+    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-lg;
+  }
+  
+  /* Pulse Animation for Critical */
+  .pulse-critical {
+    animation: pulse-critical 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse-critical {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+  
+  /* Float Animation */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  
+  /* Gradient Text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+  
+  /* Health Score Ring */
+  .health-ring {
+    @apply relative rounded-full;
+    background: conic-gradient(
+      hsl(var(--primary)) calc(var(--score) * 1%),
+      hsl(var(--muted)) calc(var(--score) * 1%)
+    );
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
