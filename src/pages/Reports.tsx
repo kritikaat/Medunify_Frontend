@@ -31,6 +31,90 @@ import type { ReportListItem, ReportType } from '@/types/api';
 import { format, parseISO, isWithinInterval, subDays, subMonths, subYears } from 'date-fns';
 import { toast } from 'sonner';
 
+// Dummy reports data (fallback when API fails)
+const DUMMY_REPORTS: ReportListItem[] = [
+  {
+    id: 'report-1',
+    hospital_name: 'City General Hospital',
+    doctor_name: 'Dr. Rajesh Kumar',
+    report_date: '2026-01-15',
+    report_type: 'lab_report',
+    document_type: 'BLOOD_TEST',
+    processing_status: 'completed',
+    extraction_confidence: 'high',
+    patient_friendly_summary: 'Your blood test results show normal values for most parameters. HbA1c is slightly elevated at 6.5%, indicating pre-diabetic range.',
+    clinical_summary: 'CBC within normal limits. HbA1c 6.5% (pre-diabetic). Lipid panel: TC 185 mg/dL, LDL 110 mg/dL.',
+    key_findings: [
+      { finding: 'HbA1c elevated (6.5%)', severity: 'medium', action_needed: 'Monitor blood sugar, consider lifestyle changes' },
+      { finding: 'Cholesterol within normal range', severity: 'low', action_needed: 'Continue current diet' },
+    ],
+    uploaded_at: '2026-01-15T10:30:00Z',
+  },
+  {
+    id: 'report-2',
+    hospital_name: 'Metro Health Center',
+    doctor_name: 'Dr. Priya Sharma',
+    report_date: '2026-01-10',
+    report_type: 'lab_report',
+    document_type: 'BLOOD_TEST',
+    processing_status: 'completed',
+    extraction_confidence: 'high',
+    patient_friendly_summary: 'Complete blood count shows all values within normal range. Good overall health indicators.',
+    clinical_summary: 'CBC normal. Hemoglobin 14.2 g/dL, WBC 7500/µL, Platelets 250000/µL.',
+    key_findings: [
+      { finding: 'All parameters normal', severity: 'low', action_needed: 'Routine follow-up in 6 months' },
+    ],
+    uploaded_at: '2026-01-10T09:15:00Z',
+  },
+  {
+    id: 'report-3',
+    hospital_name: 'University Medical',
+    doctor_name: 'Dr. Amit Singh',
+    report_date: '2025-12-20',
+    report_type: 'imaging_report',
+    document_type: 'X_RAY',
+    processing_status: 'completed',
+    extraction_confidence: 'medium',
+    patient_friendly_summary: 'Chest X-ray shows clear lung fields with no abnormalities detected.',
+    clinical_summary: 'PA view chest radiograph: Clear lung fields, normal cardiac silhouette, no pleural effusion.',
+    key_findings: [
+      { finding: 'Normal chest X-ray', severity: 'low', action_needed: 'No follow-up needed' },
+    ],
+    uploaded_at: '2025-12-20T14:45:00Z',
+  },
+  {
+    id: 'report-4',
+    hospital_name: 'City General Hospital',
+    doctor_name: 'Dr. Kavita Menon',
+    report_date: '2025-12-05',
+    report_type: 'lab_report',
+    document_type: 'KIDNEY_FUNCTION',
+    processing_status: 'completed',
+    extraction_confidence: 'high',
+    patient_friendly_summary: 'Kidney function tests show slightly elevated creatinine levels. Recommend increased water intake and follow-up.',
+    clinical_summary: 'Creatinine 1.4 mg/dL (elevated), BUN 22 mg/dL, eGFR 65 mL/min/1.73m².',
+    key_findings: [
+      { finding: 'Creatinine elevated (1.4 mg/dL)', severity: 'medium', action_needed: 'Increase hydration, retest in 3 months' },
+      { finding: 'eGFR mildly reduced', severity: 'medium', action_needed: 'Monitor kidney function' },
+    ],
+    uploaded_at: '2025-12-05T11:20:00Z',
+  },
+  {
+    id: 'report-5',
+    hospital_name: 'Downtown Clinic',
+    doctor_name: 'Dr. Suresh Reddy',
+    report_date: '2025-11-15',
+    report_type: 'prescription',
+    document_type: 'PRESCRIPTION',
+    processing_status: 'completed',
+    extraction_confidence: 'high',
+    patient_friendly_summary: 'Prescription for diabetes management and blood pressure control.',
+    clinical_summary: 'Metformin 500mg BD, Amlodipine 5mg OD prescribed.',
+    key_findings: [],
+    uploaded_at: '2025-11-15T16:30:00Z',
+  },
+];
+
 const hospitals = ['City General Hospital', 'Metro Health Center', 'University Medical', 'Downtown Clinic'];
 const types: { value: ReportType; label: string }[] = [
   { value: 'lab_report', label: 'Lab Report' },
@@ -58,6 +142,9 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Track if using dummy data
+  const [usingDummyData, setUsingDummyData] = useState(false);
+
   // Fetch reports on mount
   useEffect(() => {
     fetchReports();
@@ -66,11 +153,32 @@ export default function Reports() {
   const fetchReports = async () => {
     setIsLoading(true);
     setError(null);
+    setUsingDummyData(false);
+    
     try {
       const data = await listReports({ limit: 100 });
       setReports(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch reports');
+      // Get error details
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      const errorDetails = (err as any)?.status ? `Status: ${(err as any).status}` : '';
+      
+      console.error('❌ Reports API Error:', {
+        message: errorMessage,
+        status: (err as any)?.status,
+        fullError: err,
+      });
+      
+      // Show error toast with details
+      toast.error(`API Error: ${errorMessage}`, {
+        description: errorDetails || 'Check console for details. Using demo data.',
+        duration: 5000,
+      });
+      
+      // Fallback to dummy data
+      setReports(DUMMY_REPORTS);
+      setUsingDummyData(true);
+      setError(errorMessage); // Keep error for display
     } finally {
       setIsLoading(false);
     }
@@ -439,8 +547,34 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* Error State */}
-              {error && !isLoading && (
+              {/* API Error Banner (shows when using dummy data) */}
+              {usingDummyData && error && !isLoading && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-6 p-4 bg-warning/10 border border-warning/30 rounded-xl"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-medium text-foreground mb-1">API Connection Failed</h4>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        <strong>Error:</strong> {error}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Showing demo data. Check browser console (F12) for full error details.
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={fetchReports}>
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Retry
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Old Error State - only show if NO fallback data */}
+              {error && !usingDummyData && !isLoading && (
                 <div className="text-center py-12">
                   <AlertOctagon className="w-12 h-12 text-error mx-auto mb-4" />
                   <h3 className="font-heading text-lg font-semibold text-foreground mb-2">

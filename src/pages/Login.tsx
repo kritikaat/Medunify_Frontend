@@ -9,18 +9,6 @@ import { Activity, Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-r
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
-// Dummy patient credentials for testing
-const DUMMY_PATIENT = {
-  email: 'patient@example.com',
-  password: 'patient123',
-  user: {
-    id: 'p1',
-    email: 'patient@example.com',
-    name: 'John Doe',
-    role: 'patient' as const,
-  },
-};
-
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -37,26 +25,33 @@ export default function Login() {
     setIsSubmitting(true);
     
     try {
-      // Check for dummy credentials first
-      if (email === DUMMY_PATIENT.email && password === DUMMY_PATIENT.password) {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Store dummy user in localStorage
-        localStorage.setItem('medunify_token', 'dummy_patient_token');
-        localStorage.setItem('medunify_user', JSON.stringify(DUMMY_PATIENT.user));
-        
-        toast.success('Login successful!');
-        // Reload to pick up auth state
-        window.location.href = '/dashboard';
-        return;
-      }
-
-      // Try real API
+      console.log('🔄 [Login] Attempting login with:', { email });
+      
+      // Use ONLY real API login
       await login({ email, password });
+      
+      console.log('✅ [Login] Login successful');
+      toast.success('Login successful!');
       navigate('/dashboard');
-    } catch {
-      setLocalError('Invalid credentials. Try: patient@example.com / patient123');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: '/auth/login',
+        method: 'POST',
+        error: errorMessage,
+        email: email,
+        fullError: err,
+      };
+      
+      console.error('❌ [Login] API Error:', errorDetails);
+      
+      toast.error('Login failed', {
+        description: errorMessage,
+        duration: 5000,
+      });
+      
+      setLocalError(`Login failed: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -137,9 +132,9 @@ export default function Login() {
               </Label>
             </div>
 
-            {error && (
+            {(error || localError) && (
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                {error}
+                {localError || error}
               </div>
             )}
 

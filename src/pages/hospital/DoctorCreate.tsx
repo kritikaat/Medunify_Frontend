@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { SPECIALIZATIONS } from '@/types/hospital';
+import { createDoctor } from '@/lib/api/hospital';
 
 export default function HospitalDoctorCreate() {
   const navigate = useNavigate();
@@ -62,16 +63,32 @@ export default function HospitalDoctorCreate() {
       return;
     }
 
+    if (!formData.specialization) {
+      toast.error('Please select a specialization');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call real API
+      await createDoctor({
+        email: formData.email,
+        name: formData.name,
+        password: formData.password,
+        specialization: formData.specialization,
+        license_number: formData.license_number,
+        qualification: formData.qualification,
+        experience_years: parseInt(formData.experience_years) || 0,
+        phone: formData.phone,
+      });
       
       toast.success('Doctor account created successfully!');
       navigate('/hospital/doctors');
     } catch (error) {
-      toast.error('Failed to create doctor account');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create doctor account';
+      console.error('❌ Create Doctor API Error:', error);
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

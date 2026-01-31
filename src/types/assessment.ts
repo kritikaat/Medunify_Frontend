@@ -62,6 +62,30 @@ export function isQuestionResponse(response: ChatResponse): response is Question
 // Session Types
 // ==========================================
 
+/**
+ * Conversation message in history
+ * NEW: Added to support full Q&A history display
+ */
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  options: string[] | null;
+  timestamp: string;
+}
+
+/**
+ * Identified condition in completed assessment
+ */
+export interface IdentifiedCondition {
+  name: string;
+  confidence: number;
+  urgency_level: 'low' | 'moderate' | 'moderate_high' | 'high' | 'urgent' | 'emergency';
+}
+
+/**
+ * Assessment session with conversation history
+ * Updated based on backend API documentation
+ */
 export interface AssessmentSession {
   session_id: string;
   status: 'active' | 'completed' | 'abandoned';
@@ -71,6 +95,21 @@ export interface AssessmentSession {
   last_message: string;
   identified_symptoms: string[];
   has_assessment: boolean;
+  
+  // NEW: Full conversation history (when include_conversation=true)
+  conversation_history?: ConversationMessage[];
+  
+  // NEW: Assessment results (for completed sessions)
+  identified_conditions?: IdentifiedCondition[];
+  results_summary?: string;
+}
+
+/**
+ * Parameters for history endpoint
+ */
+export interface AssessmentHistoryParams {
+  limit?: number;
+  include_conversation?: boolean;
 }
 
 export interface ResetResponse {

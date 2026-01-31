@@ -8,26 +8,6 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
-// Dummy doctor credentials for testing
-const DUMMY_DOCTOR = {
-  email: 'doctor@cityhospital.com',
-  password: 'doctor123',
-  user: {
-    id: 'd1',
-    email: 'doctor@cityhospital.com',
-    name: 'Dr. Rajesh Kumar',
-    role: 'doctor' as const,
-    hospital_id: 'h1',
-    hospital_name: 'City Hospital',
-    specialization: 'Cardiology',
-    qualification: 'MBBS, MD (Cardiology)',
-    experience_years: 15,
-    license_number: 'MED12345',
-    phone: '+91 98765 43210',
-    bio: 'Experienced cardiologist specializing in interventional cardiology.',
-  },
-};
-
 export default function DoctorLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,26 +26,34 @@ export default function DoctorLogin() {
     setIsSubmitting(true);
 
     try {
-      // For now, use dummy data
-      if (email === DUMMY_DOCTOR.email && password === DUMMY_DOCTOR.password) {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Store dummy user in localStorage
-        localStorage.setItem('medunify_token', 'dummy_doctor_token');
-        localStorage.setItem('medunify_user', JSON.stringify(DUMMY_DOCTOR.user));
-        
-        // Reload to pick up auth state
-        window.location.href = '/doctor';
-      } else {
-        // Try real API
-        await login({ email, password });
-        navigate(from, { replace: true });
-      }
+      console.log('🔄 [Doctor Login] Attempting login with:', { email });
       
+      // Use ONLY real API login
+      await login({ email, password });
+      
+      console.log('✅ [Doctor Login] Login successful');
       toast.success('Login successful!');
+      navigate(from, { replace: true });
     } catch (err) {
-      setError('Invalid credentials. Try: doctor@cityhospital.com / doctor123');
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: '/auth/login',
+        method: 'POST',
+        role: 'doctor',
+        email: email,
+        error: errorMessage,
+        fullError: err,
+      };
+      
+      console.error('❌ [Doctor Login] API Error:', errorDetails);
+      
+      toast.error('Doctor login failed', {
+        description: errorMessage,
+        duration: 5000,
+      });
+      
+      setError(`Login failed: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }

@@ -4,7 +4,8 @@ import type {
   ChatResponse, 
   AssessmentSession, 
   ResetResponse,
-  AssessmentResponse 
+  AssessmentResponse,
+  AssessmentHistoryParams,
 } from '@/types/assessment';
 
 // API Endpoints for Assessment
@@ -70,10 +71,19 @@ export async function getCurrentSession(): Promise<AssessmentSession | null> {
 
 /**
  * Get assessment history
- * @param limit - Maximum sessions to return (default 10)
+ * @param params.limit - Maximum sessions to return (default 10)
+ * @param params.include_conversation - Include full Q&A history (default true)
+ * 
+ * NEW: When include_conversation=true, returns conversation_history array
+ * with all questions and answers for displaying full chat history
  */
-export async function getAssessmentHistory(limit: number = 10): Promise<AssessmentSession[]> {
-  return get<AssessmentSession[]>(ASSESSMENT_ENDPOINTS.HISTORY, { limit });
+export async function getAssessmentHistory(
+  params?: AssessmentHistoryParams
+): Promise<AssessmentSession[]> {
+  return get<AssessmentSession[]>(ASSESSMENT_ENDPOINTS.HISTORY, {
+    limit: params?.limit ?? 10,
+    include_conversation: params?.include_conversation !== false ? 'true' : 'false',
+  });
 }
 
 /**

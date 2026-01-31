@@ -9,10 +9,14 @@ import {
   Share2,
   Calendar,
   Mail,
+  RefreshCw,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { DoctorSidebar } from '@/components/layout/DoctorSidebar';
 import { DoctorHeader } from '@/components/layout/DoctorHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -23,6 +27,9 @@ import {
 } from '@/components/ui/select';
 import type { SharedPatient } from '@/types/doctor';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
+import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
+import { listSharedPatients } from '@/lib/api/doctor-patient-view';
 
 // Dummy patients data
 const DUMMY_PATIENTS: SharedPatient[] = [
@@ -97,22 +104,65 @@ const DUMMY_PATIENTS: SharedPatient[] = [
 ];
 
 export default function DoctorPatients() {
+  const { user } = useAuth();
   const [patients, setPatients] = useState<SharedPatient[]>([]);
   const [filteredPatients, setFilteredPatients] = useState<SharedPatient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [usingDummyData, setUsingDummyData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
-    // Simulate API call
-    const loadPatients = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
+    fetchPatients();
+  }, []);
+
+  const fetchPatients = async () => {
+    setIsLoading(true);
+    setError(null);
+    setUsingDummyData(false);
+
+    try {
+      // JWT authenticated - no doctor_id needed
+      const response = await listSharedPatients({
+        is_active: statusFilter === 'all' ? undefined : statusFilter === 'active',
+      });
+      
+      // Transform API response to match our SharedPatient type
+      const transformedPatients: SharedPatient[] = response.patients.map(p => ({
+        id: p.share_id,
+        patient_id: p.patient_id,
+        patient_name: p.patient_name,
+        patient_email: p.patient_email || '',
+        patient_age: p.patient_age,
+        patient_gender: p.patient_gender,
+        shared_content: p.shared_content || [],
+        date_range: p.date_range || 'custom',
+        expires_at: p.expires_at,
+        shared_at: p.shared_at,
+        last_accessed: p.last_accessed || undefined,
+        is_active: p.is_active,
+      }));
+
+      setPatients(transformedPatients);
+      setFilteredPatients(transformedPatients);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load patients';
+      console.error('❌ Patients API Error:', { message: errorMessage, fullError: err });
+      
+      toast.error(`Patients API Error: ${errorMessage}`, {
+        description: 'Using demo data. Check console for details.',
+        duration: 5000,
+      });
+
       setPatients(DUMMY_PATIENTS);
       setFilteredPatients(DUMMY_PATIENTS);
+      setUsingDummyData(true);
+      setError(errorMessage);
+    } finally {
       setIsLoading(false);
-    };
-    loadPatients();
-  }, []);
+    }
+  };
 
   useEffect(() => {
     let filtered = [...patients];
@@ -153,6 +203,65 @@ export default function DoctorPatients() {
         />
         
         <main className="p-6">
+          {/* Header with Refresh */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredPatients.length} of {patients.length} patients
+              </p>
+              {usingDummyData && (
+                <Badge variant="outline" className="text-xs">Demo Data</Badge>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchPatients}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+
+          {/* API Error Banner */}
+          {usingDummyData && error && !isLoading && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-warning/10 border border-warning/30 rounded-xl"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-foreground mb-1">Patients API Connection Failed</h4>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    <strong>Error:</strong> {error}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Showing demo patients. Check browser console (F12) for details.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={fetchPatients}>
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading patients...</p>
+              </div>
+            </div>
+          )}
+
+          {!isLoading && (
+            <>
           {/* Filters */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -186,111 +295,113 @@ export default function DoctorPatients() {
           </motion.div>
 
           {/* Patients Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPatients.map((patient, index) => (
-              <motion.div
-                key={patient.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Link
-                  to={`/doctor/patients/${patient.patient_id}`}
-                  className="block bg-card rounded-2xl border border-border p-6 hover:shadow-lg transition-shadow"
+          {filteredPatients.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredPatients.map((patient, index) => (
+                <motion.div
+                  key={patient.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
                 >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-lg font-semibold text-primary">
-                          {patient.patient_name.split(' ').map(n => n[0]).join('')}
+                  <Link
+                    to={`/doctor/patients/${patient.patient_id}`}
+                    className="block bg-card rounded-2xl border border-border p-6 hover:shadow-lg transition-shadow"
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <span className="text-lg font-semibold text-primary">
+                            {patient.patient_name.split(' ').map(n => n[0]).join('')}
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-foreground">{patient.patient_name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {patient.patient_age && patient.patient_gender 
+                              ? `${patient.patient_age}y, ${patient.patient_gender}`
+                              : patient.patient_email
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        patient.is_active
+                          ? 'bg-success/10 text-success'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {patient.is_active ? 'Active' : 'Expired'}
+                      </span>
+                    </div>
+
+                    {/* Shared Content */}
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                        <Share2 className="w-4 h-4" />
+                        <span>Shared Data:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {patient.shared_content.slice(0, 3).map(content => (
+                          <span 
+                            key={content}
+                            className="px-2 py-0.5 bg-muted rounded text-xs text-foreground capitalize"
+                          >
+                            {content.replace('_', ' ')}
+                          </span>
+                        ))}
+                        {patient.shared_content.length > 3 && (
+                          <span className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground">
+                            +{patient.shared_content.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          Shared
+                        </span>
+                        <span>{format(new Date(patient.shared_at), 'MMM dd, yyyy')}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          {patient.is_active ? 'Expires' : 'Expired'}
+                        </span>
+                        <span className={
+                          !patient.is_active 
+                            ? 'text-gray-500'
+                            : isPast(new Date(patient.expires_at))
+                            ? 'text-red-500'
+                            : 'text-foreground'
+                        }>
+                          {format(new Date(patient.expires_at), 'MMM dd, yyyy')}
                         </span>
                       </div>
-                      <div>
-                        <h3 className="font-medium text-foreground">{patient.patient_name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {patient.patient_age && patient.patient_gender 
-                            ? `${patient.patient_age}y, ${patient.patient_gender}`
-                            : patient.patient_email
-                          }
-                        </p>
-                      </div>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      patient.is_active
-                        ? 'bg-success/10 text-success'
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {patient.is_active ? 'Active' : 'Expired'}
-                    </span>
-                  </div>
 
-                  {/* Shared Content */}
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                      <Share2 className="w-4 h-4" />
-                      <span>Shared Data:</span>
+                    {/* View Button */}
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <Button variant="outline" className="w-full" disabled={!patient.is_active}>
+                        <Eye className="w-4 h-4 mr-2" />
+                        {patient.is_active ? 'View Reports' : 'Access Expired'}
+                      </Button>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {patient.shared_content.slice(0, 3).map(content => (
-                        <span 
-                          key={content}
-                          className="px-2 py-0.5 bg-muted rounded text-xs text-foreground capitalize"
-                        >
-                          {content.replace('_', ' ')}
-                        </span>
-                      ))}
-                      {patient.shared_content.length > 3 && (
-                        <span className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground">
-                          +{patient.shared_content.length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dates */}
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        Shared
-                      </span>
-                      <span>{format(new Date(patient.shared_at), 'MMM dd, yyyy')}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        {patient.is_active ? 'Expires' : 'Expired'}
-                      </span>
-                      <span className={
-                        !patient.is_active 
-                          ? 'text-gray-500'
-                          : isPast(new Date(patient.expires_at))
-                          ? 'text-red-500'
-                          : 'text-foreground'
-                      }>
-                        {format(new Date(patient.expires_at), 'MMM dd, yyyy')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* View Button */}
-                  <div className="mt-4 pt-4 border-t border-border">
-                    <Button variant="outline" className="w-full" disabled={!patient.is_active}>
-                      <Eye className="w-4 h-4 mr-2" />
-                      {patient.is_active ? 'View Reports' : 'Access Expired'}
-                    </Button>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-
-          {filteredPatients.length === 0 && (
+                  </Link>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
             <div className="text-center py-12">
-              <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">No patients found matching your criteria.</p>
             </div>
+          )}
+          </>
           )}
         </main>
       </div>

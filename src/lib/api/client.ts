@@ -60,31 +60,58 @@ export async function apiClient<T>(
     },
   };
 
+  // Debug logging
+  console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
+
   try {
     const response = await fetch(url, config);
 
     if (!response.ok) {
       let errorDetail = 'An error occurred';
+      let errorBody = null;
       try {
-        const errorData: ApiError = await response.json();
-        errorDetail = errorData.detail || errorDetail;
+        errorBody = await response.json();
+        errorDetail = errorBody.detail || errorDetail;
       } catch {
         errorDetail = response.statusText || errorDetail;
       }
+      
+      // Detailed error logging
+      console.error(`❌ API Error:`, {
+        url,
+        method: options.method || 'GET',
+        status: response.status,
+        statusText: response.statusText,
+        detail: errorDetail,
+        body: errorBody,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+      
       throw new ApiException(response.status, errorDetail);
     }
 
     // Handle empty responses
     const text = await response.text();
     if (!text) {
+      console.log(`✅ API Response: ${url} (empty)`);
       return {} as T;
     }
     
-    return JSON.parse(text) as T;
+    const data = JSON.parse(text) as T;
+    console.log(`✅ API Response: ${url}`, data);
+    return data;
   } catch (error) {
     if (error instanceof ApiException) {
       throw error;
     }
+    
+    // Network error logging
+    console.error(`❌ Network Error:`, {
+      url,
+      method: options.method || 'GET',
+      error: error instanceof Error ? error.message : error,
+    });
+    
     throw new ApiException(0, 'Network error. Please check your connection.');
   }
 }
@@ -175,4 +202,12 @@ export function put<T>(endpoint: string, data?: unknown): Promise<T> {
 // DELETE request helper
 export function del<T>(endpoint: string): Promise<T> {
   return apiClient<T>(endpoint, { method: 'DELETE' });
+}
+
+// PATCH request helper
+export function patch<T>(endpoint: string, data?: unknown): Promise<T> {
+  return apiClient<T>(endpoint, {
+    method: 'PATCH',
+    body: data ? JSON.stringify(data) : undefined,
+  });
 }

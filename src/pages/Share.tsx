@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,11 +31,15 @@ import {
   Clock,
   Users,
   Loader2,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import type { DoctorProfile, ActiveShare, ShareableContent } from '@/types/share';
 import { SHARE_CONTENT_OPTIONS, DATE_RANGE_OPTIONS, EXPIRY_OPTIONS } from '@/types/share';
+import { listDoctorShares, shareWithDoctors, revokeDoctorShare, updateDoctorShare } from '@/lib/api/patient-doctor-share';
+import { listDoctors } from '@/lib/api/doctor-discovery';
 
 // Dummy doctors data
 const DUMMY_DOCTORS: DoctorProfile[] = [
@@ -127,7 +132,9 @@ export default function Share() {
   const [doctors, setDoctors] = useState<DoctorProfile[]>(DUMMY_DOCTORS);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredDoctors, setFilteredDoctors] = useState<DoctorProfile[]>(DUMMY_DOCTORS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingDummyData, setUsingDummyData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Share modal state
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -151,6 +158,80 @@ export default function Share() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingShare, setEditingShare] = useState<ActiveShare | null>(null);
 
+  // Fetch data on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setError(null);
+    setUsingDummyData(false);
+
+    try {
+      // Fetch active shares and doctors in parallel
+      const [sharesResponse, doctorsResponse] = await Promise.all([
+        listDoctorShares({}),
+        listDoctors({ page: 1, per_page: 50 }),
+      ]);
+
+      // Transform shares
+      const transformedShares: ActiveShare[] = sharesResponse.shares.map(s => ({
+        id: s.id,
+        patient_id: '', // Current user
+        doctor_id: s.doctor.id,
+        doctor_name: s.doctor.name,
+        doctor_email: '', // Not exposed
+        hospital_name: s.doctor.hospital_name,
+        specialization: s.doctor.specialization,
+        shared_content: [
+          s.config.include_timeline ? 'timeline' : '',
+          s.config.include_reports ? 'lab_reports' : '',
+          s.config.include_assessments ? 'assessments' : '',
+        ].filter(Boolean) as ShareableContent[],
+        date_range: 'custom',
+        expires_at: s.expires_at,
+        created_at: s.created_at,
+        access_count: s.access_count,
+        is_active: s.is_active && !s.is_expired,
+      }));
+
+      // Transform doctors
+      const transformedDoctors: DoctorProfile[] = doctorsResponse.doctors.map(d => ({
+        id: d.id,
+        name: d.name,
+        email: '', // Not exposed
+        specialization: d.specialization,
+        hospital_id: '',
+        hospital_name: d.hospital_name,
+        qualification: d.qualifications?.join(', ') || '',
+        experience_years: d.experience_years,
+        bio: d.bio || '',
+        is_verified: d.is_verified,
+      }));
+
+      setActiveShares(transformedShares);
+      setDoctors(transformedDoctors);
+      setFilteredDoctors(transformedDoctors);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
+      console.error('❌ Share Page API Error:', { message: errorMessage, fullError: err });
+      
+      toast.error(`Share API Error: ${errorMessage}`, {
+        description: 'Using demo data. Check console for details.',
+        duration: 5000,
+      });
+
+      setActiveShares(DUMMY_ACTIVE_SHARES);
+      setDoctors(DUMMY_DOCTORS);
+      setFilteredDoctors(DUMMY_DOCTORS);
+      setUsingDummyData(true);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Filter doctors based on search
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -164,7 +245,7 @@ export default function Share() {
         d.name.toLowerCase().includes(query) ||
         d.specialization.toLowerCase().includes(query) ||
         d.hospital_name.toLowerCase().includes(query) ||
-        d.email.toLowerCase().includes(query)
+        (d.email && d.email.toLowerCase().includes(query))
     );
     setFilteredDoctors(filtered);
   }, [searchQuery, doctors]);

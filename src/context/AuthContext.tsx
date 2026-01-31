@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { login as apiLogin, logout as apiLogout, getCurrentUser, isAuthenticated } from '@/lib/api/auth';
 import { ApiException } from '@/lib/api/client';
+import { USER_STORAGE_KEY } from '@/lib/api/config';
 import type { User, LoginRequest, UserRole } from '@/types/api';
 
 interface AuthContextType {
@@ -69,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
       // Also update localStorage
-      localStorage.setItem('medunify_user', JSON.stringify(updated));
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
   }, []);

@@ -10,78 +10,90 @@ import {
   Plus,
   ArrowRight,
   Building2,
+  RefreshCw,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { HospitalSidebar } from '@/components/layout/HospitalSidebar';
 import { HospitalHeader } from '@/components/layout/HospitalHeader';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import type { HospitalStats, Doctor } from '@/types/hospital';
-
-// Dummy data for hospital dashboard
-const DUMMY_STATS: HospitalStats = {
-  total_doctors: 12,
-  active_doctors: 10,
-  inactive_doctors: 2,
-  total_patient_shares: 156,
-  this_month_shares: 23,
-  this_week_shares: 8,
-};
-
-const DUMMY_RECENT_DOCTORS: Doctor[] = [
-  {
-    id: 'd1',
-    email: 'rajesh@cityhospital.com',
-    name: 'Dr. Rajesh Kumar',
-    specialization: 'Cardiology',
-    license_number: 'MED12345',
-    hospital_id: 'h1',
-    is_active: true,
-    is_verified: true,
-    created_at: '2024-06-15',
-    patients_count: 45,
-  },
-  {
-    id: 'd2',
-    email: 'priya@cityhospital.com',
-    name: 'Dr. Priya Sharma',
-    specialization: 'Endocrinology',
-    license_number: 'MED12346',
-    hospital_id: 'h1',
-    is_active: true,
-    is_verified: true,
-    created_at: '2024-08-20',
-    patients_count: 32,
-  },
-  {
-    id: 'd3',
-    email: 'amit@cityhospital.com',
-    name: 'Dr. Amit Singh',
-    specialization: 'Nephrology',
-    license_number: 'MED12347',
-    hospital_id: 'h1',
-    is_active: true,
-    is_verified: true,
-    created_at: '2024-10-05',
-    patients_count: 28,
-  },
-];
+import { getHospitalStats, listHospitalDoctors } from '@/lib/api/hospital';
 
 export default function HospitalDashboard() {
-  const [stats, setStats] = useState<HospitalStats>(DUMMY_STATS);
-  const [recentDoctors, setRecentDoctors] = useState<Doctor[]>(DUMMY_RECENT_DOCTORS);
+  const [stats, setStats] = useState<HospitalStats | null>(null);
+  const [recentDoctors, setRecentDoctors] = useState<Doctor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API call
-    const loadData = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setStats(DUMMY_STATS);
-      setRecentDoctors(DUMMY_RECENT_DOCTORS);
-      setIsLoading(false);
-    };
-    loadData();
+    fetchDashboardData();
   }, []);
 
-  const statCards = [
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔄 [Hospital Dashboard] Fetching dashboard data...');
+      
+      // Fetch stats and doctors from API
+      const [statsResponse, doctorsResponse] = await Promise.all([
+        getHospitalStats(),
+        listHospitalDoctors({ limit: 5 }),
+      ]);
+      
+      console.log('✅ [Hospital Dashboard] Data fetched successfully:', {
+        stats: statsResponse,
+        doctorsCount: doctorsResponse.doctors.length,
+      });
+      
+      setStats(statsResponse);
+      
+      // Transform doctors to match our type
+      const transformedDoctors: Doctor[] = doctorsResponse.doctors.map(d => ({
+        id: d.id,
+        email: d.email,
+        name: d.name,
+        specialization: d.specialization,
+        license_number: d.license_number,
+        qualification: d.qualification,
+        experience_years: d.experience_years,
+        phone: d.phone,
+        hospital_id: '', // Will be from context
+        is_active: d.is_active,
+        is_verified: d.is_verified,
+        created_at: d.created_at,
+        patients_count: d.patients_count,
+      }));
+      
+      setRecentDoctors(transformedDoctors.slice(0, 3));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: '/hospital/stats and /hospital/doctors',
+        method: 'GET',
+        error: errorMessage,
+        statusCode: (err as any)?.status || 'unknown',
+        fullError: err,
+      };
+      
+      console.error('❌ Hospital Dashboard API Error:', errorDetails);
+      
+      toast.error('Failed to load hospital dashboard', {
+        description: `Error: ${errorMessage}. Please check your connection and try again.`,
+        duration: 8000,
+      });
+
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const statCards = stats ? [
     {
       label: 'Total Doctors',
       value: stats.total_doctors,
@@ -108,7 +120,50 @@ export default function HospitalDashboard() {
       color: 'accent',
       subtitle: `+${stats.this_week_shares} this week`,
     },
-  ];
+  ] : [];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <HospitalSidebar />
+        <div className="ml-64">
+          <HospitalHeader />
+          <main className="p-6 flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+              <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <HospitalSidebar />
+        <div className="ml-64">
+          <HospitalHeader />
+          <main className="p-6">
+            <div className="bg-destructive/10 border border-destructive rounded-2xl p-8 text-center">
+              <AlertTriangle className="w-16 h-16 text-destructive mx-auto mb-4" />
+              <h2 className="text-2xl font-heading font-bold text-foreground mb-2">
+                Failed to Load Dashboard
+              </h2>
+              <p className="text-muted-foreground mb-4">
+                {error}
+              </p>
+              <Button onClick={fetchDashboardData} variant="hero">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">

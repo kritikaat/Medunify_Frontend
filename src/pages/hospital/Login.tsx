@@ -8,18 +8,6 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
-// Dummy hospital credentials for testing
-const DUMMY_HOSPITAL = {
-  email: 'hospital@cityhospital.com',
-  password: 'hospital123',
-  user: {
-    id: 'h1',
-    email: 'hospital@cityhospital.com',
-    name: 'City Hospital',
-    role: 'hospital' as const,
-  },
-};
-
 export default function HospitalLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,26 +26,34 @@ export default function HospitalLogin() {
     setIsSubmitting(true);
 
     try {
-      // For now, use dummy data
-      if (email === DUMMY_HOSPITAL.email && password === DUMMY_HOSPITAL.password) {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Store dummy user in localStorage
-        localStorage.setItem('medunify_token', 'dummy_hospital_token');
-        localStorage.setItem('medunify_user', JSON.stringify(DUMMY_HOSPITAL.user));
-        
-        // Reload to pick up auth state
-        window.location.href = '/hospital';
-      } else {
-        // Try real API
-        await login({ email, password });
-        navigate(from, { replace: true });
-      }
+      console.log('🔄 [Hospital Login] Attempting login with:', { email });
       
+      // Use ONLY real API login
+      await login({ email, password });
+      
+      console.log('✅ [Hospital Login] Login successful');
       toast.success('Login successful!');
+      navigate(from, { replace: true });
     } catch (err) {
-      setError('Invalid credentials. Try: hospital@cityhospital.com / hospital123');
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: '/auth/login',
+        method: 'POST',
+        role: 'hospital',
+        email: email,
+        error: errorMessage,
+        fullError: err,
+      };
+      
+      console.error('❌ [Hospital Login] API Error:', errorDetails);
+      
+      toast.error('Hospital login failed', {
+        description: errorMessage,
+        duration: 5000,
+      });
+      
+      setError(`Login failed: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }

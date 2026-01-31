@@ -12,10 +12,14 @@ import {
   UserCheck,
   Mail,
   Phone,
+  RefreshCw,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { HospitalSidebar } from '@/components/layout/HospitalSidebar';
 import { HospitalHeader } from '@/components/layout/HospitalHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -34,6 +38,7 @@ import {
 import { toast } from 'sonner';
 import type { Doctor } from '@/types/hospital';
 import { SPECIALIZATIONS } from '@/types/hospital';
+import { listHospitalDoctors, toggleDoctorStatus } from '@/lib/api/hospital';
 
 // Dummy doctors data
 const DUMMY_DOCTORS: Doctor[] = [
@@ -118,20 +123,72 @@ export default function HospitalDoctors() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [usingDummyData, setUsingDummyData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [specializationFilter, setSpecializationFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
-    // Simulate API call
-    const loadDoctors = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setDoctors(DUMMY_DOCTORS);
-      setFilteredDoctors(DUMMY_DOCTORS);
-      setIsLoading(false);
-    };
-    loadDoctors();
+    fetchDoctors();
   }, []);
+
+  const fetchDoctors = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔄 [Hospital Doctors] Fetching doctors list...');
+      
+      const response = await listHospitalDoctors({});
+      
+      console.log('✅ [Hospital Doctors] Data fetched successfully:', {
+        total: response.total,
+        count: response.doctors.length,
+      });
+      
+      // Transform to our Doctor type
+      const transformedDoctors: Doctor[] = response.doctors.map(d => ({
+        id: d.id,
+        email: d.email,
+        name: d.name,
+        specialization: d.specialization,
+        qualification: d.qualification,
+        license_number: d.license_number,
+        experience_years: d.experience_years,
+        phone: d.phone,
+        hospital_id: '',
+        is_active: d.is_active,
+        is_verified: d.is_verified,
+        created_at: d.created_at,
+        patients_count: d.patients_count,
+      }));
+      
+      setDoctors(transformedDoctors);
+      setFilteredDoctors(transformedDoctors);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load doctors';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: '/hospital/doctors',
+        method: 'GET',
+        error: errorMessage,
+        statusCode: (err as any)?.status || 'unknown',
+        fullError: err,
+      };
+      
+      console.error('❌ Hospital Doctors API Error:', errorDetails);
+      
+      toast.error('Failed to load doctors list', {
+        description: `Error: ${errorMessage}. Please check your connection and try again.`,
+        duration: 8000,
+      });
+
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     let filtered = [...doctors];
@@ -161,13 +218,37 @@ export default function HospitalDoctors() {
     setFilteredDoctors(filtered);
   }, [searchQuery, specializationFilter, statusFilter, doctors]);
 
-  const toggleDoctorStatus = (doctorId: string) => {
-    setDoctors(prev =>
-      prev.map(d =>
-        d.id === doctorId ? { ...d, is_active: !d.is_active } : d
-      )
-    );
-    toast.success('Doctor status updated');
+  const handleToggleDoctorStatus = async (doctorId: string) => {
+    const doctor = doctors.find(d => d.id === doctorId);
+    if (!doctor) return;
+
+    try {
+      console.log(`🔄 [Hospital Doctors] Toggling doctor status: ${doctorId}`);
+      
+      await toggleDoctorStatus(doctorId, !doctor.is_active);
+      
+      console.log(`✅ [Hospital Doctors] Status toggled successfully`);
+      
+      setDoctors(prev =>
+        prev.map(d =>
+          d.id === doctorId ? { ...d, is_active: !d.is_active } : d
+        )
+      );
+      toast.success(`Doctor ${doctor.is_active ? 'deactivated' : 'activated'} successfully`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update status';
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        endpoint: `/hospital/doctors/${doctorId}/status`,
+        method: 'PATCH',
+        error: errorMessage,
+        doctorId,
+        fullError: err,
+      };
+      
+      console.error('❌ Toggle Status API Error:', errorDetails);
+      toast.error(`Failed to update doctor status: ${errorMessage}`);
+    }
   };
 
   return (
@@ -336,7 +417,7 @@ export default function HospitalDoctors() {
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => toggleDoctorStatus(doctor.id)}>
+                            <DropdownMenuItem onClick={() => handleToggleDoctorStatus(doctor.id)}>
                               {doctor.is_active ? (
                                 <>
                                   <UserX className="w-4 h-4 mr-2" />

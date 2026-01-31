@@ -10,13 +10,19 @@ import {
   ArrowRight,
   Calendar,
   FileText,
+  RefreshCw,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { DoctorSidebar } from '@/components/layout/DoctorSidebar';
 import { DoctorHeader } from '@/components/layout/DoctorHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import type { DoctorStats, SharedPatient, DoctorActivity } from '@/types/doctor';
 import { format, formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
+import { listSharedPatients, getDoctorStats } from '@/lib/api/doctor-patient-view';
 
 // Dummy data
 const DUMMY_STATS: DoctorStats = {
@@ -99,15 +105,61 @@ export default function DoctorDashboard() {
   const [recentPatients, setRecentPatients] = useState<SharedPatient[]>(DUMMY_RECENT_PATIENTS);
   const [activity, setActivity] = useState<DoctorActivity[]>(DUMMY_ACTIVITY);
   const [isLoading, setIsLoading] = useState(true);
+  const [usingDummyData, setUsingDummyData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API call
-    const loadData = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setIsLoading(false);
-    };
-    loadData();
+    fetchDashboardData();
   }, []);
+
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    setError(null);
+    setUsingDummyData(false);
+
+    try {
+      // Fetch stats and patients from API (JWT authenticated, no doctor_id needed)
+      const [statsResponse, patientsResponse] = await Promise.all([
+        getDoctorStats(),
+        listSharedPatients({ limit: 3 }),
+      ]);
+      
+      // Set stats from API
+      setStats(statsResponse);
+      
+      // Transform API response to match our types
+      const transformedPatients: SharedPatient[] = patientsResponse.patients.map(p => ({
+        id: p.share_id,
+        patient_id: p.patient_id,
+        patient_name: p.patient_name,
+        patient_email: p.patient_email || '',
+        shared_content: p.shared_content || [],
+        date_range: p.date_range || 'custom',
+        expires_at: p.expires_at,
+        shared_at: p.shared_at,
+        is_active: p.is_active,
+      }));
+
+      setRecentPatients(transformedPatients);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard';
+      console.error('❌ Doctor Dashboard API Error:', { message: errorMessage, fullError: err });
+      
+      toast.error(`Dashboard API Error: ${errorMessage}`, {
+        description: 'Using demo data. Check console for details.',
+        duration: 5000,
+      });
+
+      setRecentPatients(DUMMY_RECENT_PATIENTS);
+      setStats(DUMMY_STATS);
+      setActivity(DUMMY_ACTIVITY);
+      setUsingDummyData(true);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const statCards = [
     {
@@ -147,6 +199,65 @@ export default function DoctorDashboard() {
         <DoctorHeader />
         
         <main className="p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="font-heading text-2xl font-bold text-foreground">
+                Welcome back, {user?.name?.split(' ')[0] || 'Doctor'}!
+              </h1>
+              <p className="text-muted-foreground">
+                Here's an overview of your patient shares
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchDashboardData}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+
+          {/* API Error Banner */}
+          {usingDummyData && error && !isLoading && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-warning/10 border border-warning/30 rounded-xl"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-foreground mb-1">Dashboard API Connection Failed</h4>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    <strong>Error:</strong> {error}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Showing demo data. Check browser console (F12) for details.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={fetchDashboardData}>
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading dashboard...</p>
+              </div>
+            </div>
+          )}
+
+          {!isLoading && (
+            <>
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {statCards.map((stat, index) => (
@@ -261,6 +372,8 @@ export default function DoctorDashboard() {
               </div>
             </motion.div>
           </div>
+            </>
+          )}
         </main>
       </div>
     </div>

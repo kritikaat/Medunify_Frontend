@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, USER_STORAGE_KEY } from './config';
+import { API_ENDPOINTS, USER_STORAGE_KEY, TOKEN_STORAGE_KEY } from './config';
 import { post, setAccessToken, removeAccessToken } from './client';
 import type { LoginRequest, LoginResponse, User } from '@/types/api';
 
@@ -34,6 +34,6 @@ export function getCurrentUser(): User | null {
 
 // Check if user is authenticated
 export function isAuthenticated(): boolean {
-  const token = localStorage.getItem('medunify_access_token');
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
   return !!token;
 }

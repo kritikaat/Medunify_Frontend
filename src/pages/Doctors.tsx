@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,11 +28,15 @@ import {
   Loader2,
   Briefcase,
   Mail,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { DoctorProfile, HospitalProfile, ShareableContent } from '@/types/share';
 import { SHARE_CONTENT_OPTIONS, DATE_RANGE_OPTIONS, EXPIRY_OPTIONS } from '@/types/share';
 import { SPECIALIZATIONS } from '@/types/hospital';
+import { listDoctors, getSpecializations, getCities } from '@/lib/api/doctor-discovery';
+import { shareWithDoctors } from '@/lib/api/patient-doctor-share';
 
 // Dummy doctors data
 const DUMMY_DOCTORS: DoctorProfile[] = [
@@ -144,7 +149,11 @@ export default function Doctors() {
   const [doctors, setDoctors] = useState<DoctorProfile[]>(DUMMY_DOCTORS);
   const [hospitals, setHospitals] = useState<HospitalProfile[]>(DUMMY_HOSPITALS);
   const [filteredDoctors, setFilteredDoctors] = useState<DoctorProfile[]>(DUMMY_DOCTORS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingDummyData, setUsingDummyData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [specializations, setSpecializations] = useState<string[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,7 +178,76 @@ export default function Doctors() {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [viewingDoctor, setViewingDoctor] = useState<DoctorProfile | null>(null);
 
-  // Filter doctors
+  // Fetch doctors from API
+  useEffect(() => {
+    fetchDoctors();
+    fetchFilters();
+  }, []);
+
+  const fetchDoctors = async () => {
+    setIsLoading(true);
+    setError(null);
+    setUsingDummyData(false);
+
+    try {
+      const response = await listDoctors({
+        query: searchQuery || undefined,
+        specialization: specializationFilter !== 'all' ? specializationFilter : undefined,
+        page: 1,
+        per_page: 100,
+      });
+
+      // Transform API response to match our DoctorProfile type
+      const transformedDoctors: DoctorProfile[] = response.doctors.map(d => ({
+        id: d.id,
+        name: d.name,
+        email: '', // API doesn't expose email publicly
+        specialization: d.specialization,
+        hospital_id: '', // Not in public API
+        hospital_name: d.hospital_name,
+        qualification: d.qualifications?.join(', ') || '',
+        experience_years: d.experience_years,
+        bio: d.bio || '',
+        is_verified: d.is_verified,
+        profile_photo_url: d.profile_photo_url,
+      }));
+
+      setDoctors(transformedDoctors);
+      setFilteredDoctors(transformedDoctors);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch doctors';
+      console.error('❌ Doctors API Error:', { message: errorMessage, fullError: err });
+      
+      toast.error(`Doctors API Error: ${errorMessage}`, {
+        description: 'Using demo data. Check console for details.',
+        duration: 5000,
+      });
+
+      setDoctors(DUMMY_DOCTORS);
+      setFilteredDoctors(DUMMY_DOCTORS);
+      setUsingDummyData(true);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchFilters = async () => {
+    try {
+      const [specsResponse, citiesResponse] = await Promise.all([
+        getSpecializations(),
+        getCities(),
+      ]);
+      setSpecializations(specsResponse);
+      setCities(citiesResponse);
+    } catch (err) {
+      console.error('❌ Filters API Error:', err);
+      // Use default specializations from hospital types
+      setSpecializations(SPECIALIZATIONS);
+    }
+  };
+
+  // Filter doctors locally
   useEffect(() => {
     let filtered = [...doctors];
 
@@ -181,7 +259,7 @@ export default function Doctors() {
           d.name.toLowerCase().includes(query) ||
           d.specialization.toLowerCase().includes(query) ||
           d.hospital_name.toLowerCase().includes(query) ||
-          d.email.toLowerCase().includes(query)
+          (d.email && d.email.toLowerCase().includes(query))
       );
     }
 
@@ -231,12 +309,47 @@ export default function Doctors() {
 
     setIsSharing(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Calculate date range
+      const dateRangeMap: Record<string, number> = {
+        '3-months': 3,
+        '6-months': 6,
+        '1-year': 12,
+        'all': 60,
+      };
+      const monthsAgo = dateRangeMap[shareConfig.dateRange] || 6;
+      const dateFrom = new Date();
+      dateFrom.setMonth(dateFrom.getMonth() - monthsAgo);
+
+      // Try real API
+      await shareWithDoctors({
+        doctor_ids: [selectedDoctor.id],
+        config: {
+          include_profile: true,
+          include_reports: shareConfig.content.includes('lab_reports') || shareConfig.content.includes('imaging_reports'),
+          include_timeline: shareConfig.content.includes('timeline'),
+          include_assessments: shareConfig.content.includes('assessments'),
+          include_prescriptions: shareConfig.content.includes('prescriptions'),
+          report_types: shareConfig.content.filter(c => ['lab_reports', 'imaging_reports', 'prescriptions'].includes(c)),
+          date_range_start: dateFrom.toISOString().split('T')[0],
+          date_range_end: new Date().toISOString().split('T')[0],
+          permissions: ['view'],
+        },
+        expires_in_days: shareConfig.expiresInDays,
+      });
+      
       toast.success(`Shared successfully with ${selectedDoctor.name}`);
       setShareModalOpen(false);
     } catch (error) {
-      toast.error('Failed to share. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to share';
+      console.error('❌ Share API Error:', error);
+      
+      // If using dummy data, simulate success
+      if (usingDummyData) {
+        toast.success(`Shared successfully with ${selectedDoctor.name} (Demo)`);
+        setShareModalOpen(false);
+      } else {
+        toast.error(`Failed to share: ${errorMessage}`);
+      }
     } finally {
       setIsSharing(false);
     }
@@ -259,13 +372,52 @@ export default function Doctors() {
               animate={{ opacity: 1, y: 0 }}
               className="mb-8"
             >
-              <h1 className="font-heading text-2xl font-bold text-foreground mb-2">
-                Browse Doctors
-              </h1>
-              <p className="text-muted-foreground">
-                Find and share your health records with verified healthcare providers
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="font-heading text-2xl font-bold text-foreground mb-2">
+                    Browse Doctors
+                  </h1>
+                  <p className="text-muted-foreground">
+                    Find and share your health records with verified healthcare providers
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchDoctors}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
             </motion.div>
+
+            {/* API Error Banner */}
+            {usingDummyData && error && !isLoading && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 p-4 bg-warning/10 border border-warning/30 rounded-xl"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-medium text-foreground mb-1">Doctors API Connection Failed</h4>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      <strong>Error:</strong> {error}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Showing demo doctors. Check browser console (F12) for details.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchDoctors}>
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Retry
+                  </Button>
+                </div>
+              </motion.div>
+            )}
 
             {/* Filters */}
             <motion.div
@@ -317,14 +469,28 @@ export default function Doctors() {
             </motion.div>
 
             {/* Results Count */}
-            <div className="mb-4">
+            <div className="mb-4 flex items-center gap-2">
               <p className="text-sm text-muted-foreground">
                 Showing {filteredDoctors.length} of {doctors.length} doctors
               </p>
+              {usingDummyData && (
+                <Badge variant="outline" className="text-xs">Demo Data</Badge>
+              )}
             </div>
 
+            {/* Loading State */}
+            {isLoading && (
+              <div className="flex items-center justify-center py-20">
+                <div className="text-center">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading doctors...</p>
+                </div>
+              </div>
+            )}
+
             {/* Doctors Grid */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {!isLoading && (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredDoctors.map((doctor, index) => (
                 <motion.div
                   key={doctor.id}
@@ -396,9 +562,10 @@ export default function Doctors() {
                   </div>
                 </motion.div>
               ))}
-            </div>
+              </div>
+            )}
 
-            {filteredDoctors.length === 0 && (
+            {filteredDoctors.length === 0 && !isLoading && (
               <div className="text-center py-12">
                 <Users className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium text-foreground mb-2">No doctors found</h3>
